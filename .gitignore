@@ -1,0 +1,39 @@
+# Virtual Environment
+venv/
+bostvenv/
+*.pyc
+__pycache__/
+
+# Data files (DVC will track these instead)
+data/
+*.csv
+*.xlsx
+
+# Model files (DVC will track these instead)
+models/*.h5
+models/*.pkl
+models/*.joblib
+
+# MLflow tracking
+mlruns/
+mlartifacts/
+
+# DVC
+.dvc/cache
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+*.egg-info/
+dist/
+build/
