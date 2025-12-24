@@ -1,4 +1,6 @@
+import json
 import logging
+import os
 
 import pandas as pd
 import yaml
@@ -90,6 +92,20 @@ class ModelEvaluator:
             logger.error("Failed to calculate metrics: %s", e)
             raise
 
+    def save_metrics(self, metrics: dict) -> None:
+        """Save metrics to JSON file."""
+        try:
+            metrics_file = self.config["metrics_file"]
+            os.makedirs(os.path.dirname(metrics_file), exist_ok=True)
+
+            with open(metrics_file, "w") as f:
+                json.dump(metrics, f, indent=4)
+
+            logger.info("Metrics saved to %s", metrics_file)
+        except Exception as e:
+            logger.error("Failed to save metrics: %s", e)
+            raise
+
     def run(self):
         """Execute the model evaluation pipeline."""
         try:
@@ -107,6 +123,8 @@ class ModelEvaluator:
             # Calculate metrics
             self.metrics = self.calculate_metrics(y_test, y_pred)
 
+            # Save metrics to file
+            self.save_metrics(self.metrics)
             logger.info("Model evaluation completed successfully")
             return self.metrics
         except Exception as e:

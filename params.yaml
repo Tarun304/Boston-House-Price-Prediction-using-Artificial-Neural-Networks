@@ -35,6 +35,7 @@ model_evaluation:
   X_test_file: data/processed/X_test.csv
   y_test_file: data/processed/y_test.csv
   model_path: models/best_model.h5
+  metrics_file: reports/metrics.json
 
 
 
