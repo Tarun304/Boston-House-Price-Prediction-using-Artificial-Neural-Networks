@@ -1,6 +1,42 @@
 data_ingestion:
   raw_data_path: data/raw
 
+data_preprocessing:
+  raw_data_file: data/raw/boston.csv
+  interim_data_path: data/interim
+  test_size: 0.2
+  random_state: 42
+  winsorize_limits: [0.05, 0.1]
+  drop_columns: ['CHAS']
+
+feature_engineering:
+  interim_train_file: data/interim/train.csv
+  interim_test_file: data/interim/test.csv
+  processed_data_path: data/processed
+  n_features: 5
+  random_state: 42
+
+model_building:
+  X_train_file: data/processed/X_train.csv
+  y_train_file: data/processed/y_train.csv
+  X_test_file: data/processed/X_test.csv
+  y_test_file: data/processed/y_test.csv
+  model_output_path: models
+  model_name: best_model.h5
+  units: 64
+  num_layers: 1
+  learning_rate: 0.01
+  epochs: 100
+  batch_size: 32
+  patience: 10
+
+
+model_evaluation:
+  X_test_file: data/processed/X_test.csv
+  y_test_file: data/processed/y_test.csv
+  model_path: models/best_model.h5
+
+
 
 
 
