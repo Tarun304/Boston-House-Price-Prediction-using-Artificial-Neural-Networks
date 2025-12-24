@@ -4,21 +4,24 @@ bostvenv/
 *.pyc
 __pycache__/
 
-# Data files (DVC will track these instead)
-data/
-*.csv
-*.xlsx
+# Data files - BUT allow .dvc metadata files
+/data/raw/*.csv
+/data/interim/*
+/data/processed/*
+!*.dvc
+!.gitignore
 
-# Model files (DVC will track these instead)
-models/*.h5
-models/*.pkl
-models/*.joblib
+# Model files - BUT allow .dvc metadata
+/models/*.h5
+/models/*.pkl
+/models/*.joblib
+!*.dvc
 
 # MLflow tracking
 mlruns/
 mlartifacts/
 
-# DVC
+# DVC cache (large files stored here)
 .dvc/cache
 
 # Jupyter Notebook checkpoints
@@ -37,3 +40,7 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+
+# Logs
+errors.log
+*.log
