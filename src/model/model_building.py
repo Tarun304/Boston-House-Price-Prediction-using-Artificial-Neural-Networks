@@ -3,10 +3,7 @@ import os
 
 import pandas as pd
 import yaml
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.optimizers import Adam
+from tensorflow import keras
 
 # Logging configuration
 logger = logging.getLogger("model_building")
@@ -58,28 +55,30 @@ class ModelBuilder:
             logger.error("Failed to load processed data: %s", e)
             raise
 
-    def build_model(self, input_dim: int) -> Sequential:
+    def build_model(self, input_dim: int) -> keras.models.Sequential:
         """Build neural network model with configured architecture."""
         try:
             units = self.config["units"]
             num_layers = self.config["num_layers"]
             learning_rate = self.config["learning_rate"]
 
-            model = Sequential()
+            model = keras.models.Sequential()
 
             # Input layer and first hidden layer
-            model.add(Dense(units=units, input_dim=input_dim, activation="relu"))
+            model.add(
+                keras.layers.Dense(units=units, input_dim=input_dim, activation="relu")
+            )
 
             # Additional hidden layers
             for _ in range(num_layers - 1):
-                model.add(Dense(units=units, activation="relu"))
+                model.add(keras.layers.Dense(units=units, activation="relu"))
 
             # Output layer
-            model.add(Dense(1))
+            model.add(keras.layers.Dense(1))
 
             # Compile model
             model.compile(
-                optimizer=Adam(learning_rate=learning_rate),
+                optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
                 loss="mean_squared_error",
                 metrics=["mae"],
             )
@@ -110,14 +109,14 @@ class ModelBuilder:
             os.makedirs(self.config["model_output_path"], exist_ok=True)
 
             # Callbacks
-            early_stopping = EarlyStopping(
+            early_stopping = keras.callbacks.EarlyStopping(
                 monitor="val_loss",
                 patience=patience,
                 restore_best_weights=True,
                 mode="auto",
             )
 
-            checkpoint = ModelCheckpoint(
+            checkpoint = keras.callbacks.ModelCheckpoint(
                 model_path, save_best_only=True, monitor="val_loss", mode="min"
             )
 

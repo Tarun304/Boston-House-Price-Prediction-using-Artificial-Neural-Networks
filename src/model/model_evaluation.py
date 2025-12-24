@@ -3,7 +3,7 @@ import logging
 import pandas as pd
 import yaml
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from tensorflow.keras.models import load_model
+from tensorflow import keras
 
 # Logging configuration
 logger = logging.getLogger("model_evaluation")
@@ -41,7 +41,7 @@ class ModelEvaluator:
         """Load trained model."""
         try:
             model_path = self.config["model_path"]
-            self.model = load_model(model_path)
+            self.model = keras.models.load_model(model_path)
             logger.info("Model loaded from %s", model_path)
         except Exception as e:
             logger.error("Failed to load model: %s", e)
