@@ -60,3 +60,4 @@ reports/experiment_info.json
 
 # Model outputs (tracked by DVC)
 models/
+reports/*.json
