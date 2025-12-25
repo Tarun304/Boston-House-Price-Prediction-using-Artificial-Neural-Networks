@@ -44,3 +44,19 @@ build/
 # Logs
 errors.log
 *.log
+
+# environment variables
+.env
+
+# Backup files
+*.backup
+
+# Local scripts
+load_env.ps1
+setup_env.ps1
+
+# Generated reports (tracked by DVC)
+reports/experiment_info.json
+
+# Model outputs (tracked by DVC)
+models/

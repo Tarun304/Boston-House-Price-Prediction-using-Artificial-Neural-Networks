@@ -1,11 +1,19 @@
 import json
 import logging
 import os
+import sys
+from pathlib import Path
 
+import mlflow
+import mlflow.keras
 import pandas as pd
 import yaml
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from tensorflow import keras
+
+# Add parent directory to path for config import
+sys.path.append(str(Path(__file__).parent.parent.parent))
+from src.config import MLFLOW_TRACKING_URI
 
 # Logging configuration
 logger = logging.getLogger("model_evaluation")
@@ -111,22 +119,64 @@ class ModelEvaluator:
         try:
             logger.info("Starting model evaluation...")
 
-            # Load model
-            self.load_model()
+            # Get active MLflow run or start new one
+            active_run = mlflow.active_run()
+            if active_run is None:
+                mlflow.start_run(run_name="model_evaluation")
 
-            # Load test data
-            X_test, y_test = self.load_test_data()
+            try:
+                # Load model
+                self.load_model()
 
-            # Make predictions
-            y_pred = self.make_predictions(X_test)
+                # Load test data
+                X_test, y_test = self.load_test_data()
 
-            # Calculate metrics
-            self.metrics = self.calculate_metrics(y_test, y_pred)
+                # Make predictions
+                y_pred = self.make_predictions(X_test)
 
-            # Save metrics to file
-            self.save_metrics(self.metrics)
-            logger.info("Model evaluation completed successfully")
-            return self.metrics
+                # Calculate metrics
+                self.metrics = self.calculate_metrics(y_test, y_pred)
+
+                # Log metrics to MLflow
+                mlflow.log_metric("test_mse", self.metrics["mse"])
+                mlflow.log_metric("test_mae", self.metrics["mae"])
+                mlflow.log_metric("test_r2_score", self.metrics["r2_score"])
+
+                # Save metrics to file
+                self.save_metrics(self.metrics)
+
+                # Log metrics file as artifact
+                mlflow.log_artifact(self.config["metrics_file"])
+
+                # Save and log experiment info
+                run_id = mlflow.active_run().info.run_id
+                experiment_info = {
+                    "run_id": run_id,
+                    "model_path": self.config["model_path"],
+                    "metrics": self.metrics,
+                }
+
+                info_file = "reports/experiment_info.json"
+                os.makedirs("reports", exist_ok=True)
+                with open(info_file, "w") as f:
+                    json.dump(experiment_info, f, indent=4)
+
+                mlflow.log_artifact(info_file)
+
+                # Log any error logs if they exist
+                log_file = "model_evaluation_errors.log"
+                if os.path.exists(log_file):
+                    mlflow.log_artifact(log_file)
+
+                logger.info("Model evaluation completed successfully")
+                logger.info("MLflow run ID: %s", run_id)
+
+                return self.metrics
+
+            finally:
+                if active_run is None:
+                    mlflow.end_run()
+
         except Exception as e:
             logger.error("Model evaluation failed: %s", e)
             raise

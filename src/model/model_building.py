@@ -1,9 +1,18 @@
+import json
 import logging
 import os
+import sys
+from pathlib import Path
 
+import mlflow
+import mlflow.keras
 import pandas as pd
 import yaml
 from tensorflow import keras
+
+# Add parent directory to path for config import
+sys.path.append(str(Path(__file__).parent.parent.parent))
+from src.config import MLFLOW_TRACKING_URI
 
 # Logging configuration
 logger = logging.getLogger("model_building")
@@ -99,42 +108,87 @@ class ModelBuilder:
     def train_model(self, X_train, y_train, X_test, y_test) -> None:
         """Train the model with early stopping and model checkpointing."""
         try:
-            epochs = self.config["epochs"]
-            batch_size = self.config["batch_size"]
-            patience = self.config["patience"]
+            # Start MLflow run
+            with mlflow.start_run(run_name="model_training"):
 
-            model_path = os.path.join(
-                self.config["model_output_path"], self.config["model_name"]
-            )
-            os.makedirs(self.config["model_output_path"], exist_ok=True)
+                # Log ALL parameters
+                mlflow.log_param("units", self.config["units"])
+                mlflow.log_param("num_layers", self.config["num_layers"])
+                mlflow.log_param("learning_rate", self.config["learning_rate"])
+                mlflow.log_param("epochs", self.config["epochs"])
+                mlflow.log_param("batch_size", self.config["batch_size"])
+                mlflow.log_param("patience", self.config["patience"])
+                mlflow.log_param("input_dim", X_train.shape[1])
+                mlflow.log_param("train_samples", X_train.shape[0])
+                mlflow.log_param("test_samples", X_test.shape[0])
 
-            # Callbacks
-            early_stopping = keras.callbacks.EarlyStopping(
-                monitor="val_loss",
-                patience=patience,
-                restore_best_weights=True,
-                mode="auto",
-            )
+                epochs = self.config["epochs"]
+                batch_size = self.config["batch_size"]
+                patience = self.config["patience"]
 
-            checkpoint = keras.callbacks.ModelCheckpoint(
-                model_path, save_best_only=True, monitor="val_loss", mode="min"
-            )
+                model_path = os.path.join(
+                    self.config["model_output_path"], self.config["model_name"]
+                )
+                os.makedirs(self.config["model_output_path"], exist_ok=True)
 
-            logger.info("Starting model training...")
+                # Callbacks
+                early_stopping = keras.callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    patience=patience,
+                    restore_best_weights=True,
+                    mode="auto",
+                )
 
-            # Train model
-            self.history = self.model.fit(
-                X_train,
-                y_train,
-                epochs=epochs,
-                batch_size=batch_size,
-                validation_data=(X_test, y_test),
-                callbacks=[early_stopping, checkpoint],
-                verbose=2,
-            )
+                checkpoint = keras.callbacks.ModelCheckpoint(
+                    model_path, save_best_only=True, monitor="val_loss", mode="min"
+                )
 
-            logger.info("Model training completed")
-            logger.info("Best model saved to %s", model_path)
+                logger.info("Starting model training...")
+
+                # Train model
+                self.history = self.model.fit(
+                    X_train,
+                    y_train,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    validation_data=(X_test, y_test),
+                    callbacks=[early_stopping, checkpoint],
+                    verbose=2,
+                )
+
+                # Log metrics to MLflow
+                final_train_loss = self.history.history["loss"][-1]
+                final_val_loss = self.history.history["val_loss"][-1]
+                final_train_mae = self.history.history["mae"][-1]
+                final_val_mae = self.history.history["val_mae"][-1]
+
+                mlflow.log_metric("train_loss", final_train_loss)
+                mlflow.log_metric("val_loss", final_val_loss)
+                mlflow.log_metric("train_mae", final_train_mae)
+                mlflow.log_metric("val_mae", final_val_mae)
+
+                # Log model to MLflow
+                mlflow.keras.log_model(self.model, "model")
+
+                # Save and log model info
+                run_id = mlflow.active_run().info.run_id
+                model_info = {
+                    "run_id": run_id,
+                    "model_path": model_path,
+                    "framework": "keras",
+                }
+
+                info_file = os.path.join(
+                    self.config["model_output_path"], "training_info.json"
+                )
+                with open(info_file, "w") as f:
+                    json.dump(model_info, f, indent=4)
+
+                mlflow.log_artifact(info_file)
+
+                logger.info("Model training completed")
+                logger.info("Best model saved to %s", model_path)
+                logger.info("MLflow run ID: %s", run_id)
 
         except Exception as e:
             logger.error("Failed to train model: %s", e)
