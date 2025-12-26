@@ -210,6 +210,15 @@ keras
                 shutil.rmtree(temp_dir)
                 logger.info("Model logged to MLflow successfully")
 
+                # Log preprocessing artifacts
+                logger.info("Logging preprocessing artifacts to MLflow...")
+
+                mlflow.log_artifact("models/scaler.pkl")
+                mlflow.log_artifact("models/selected_features.pkl")
+                mlflow.log_artifact("models/winsorization_bounds.json")
+
+                logger.info("All preprocessing artifacts logged to MLflow")
+
                 # Log evaluation metrics
                 mlflow.log_metric("test_mse", self.metrics["mse"])
                 mlflow.log_metric("test_mae", self.metrics["mae"])
