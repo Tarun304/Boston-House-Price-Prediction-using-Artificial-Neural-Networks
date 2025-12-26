@@ -22,7 +22,7 @@ model_building:
   X_test_file: data/processed/X_test.csv
   y_test_file: data/processed/y_test.csv
   model_output_path: models
-  model_name: best_model.h5
+  model_name: best_model.keras
   units: 64
   num_layers: 1
   learning_rate: 0.01
@@ -34,7 +34,7 @@ model_building:
 model_evaluation:
   X_test_file: data/processed/X_test.csv
   y_test_file: data/processed/y_test.csv
-  model_path: models/best_model.h5
+  model_path: models/best_model.keras
   metrics_file: reports/metrics.json
 
 

@@ -1,11 +1,11 @@
 import json
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 
 import mlflow
-import mlflow.keras
 import pandas as pd
 import yaml
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -33,6 +33,7 @@ class ModelEvaluator:
         """Initialize ModelEvaluator with parameters."""
         self.params = self.load_params(params_path)
         self.config = self.params["model_evaluation"]
+        self.build_config = self.params["model_building"]
         self.model = None
         self.metrics = {}
 
@@ -119,40 +120,109 @@ class ModelEvaluator:
         try:
             logger.info("Starting model evaluation...")
 
-            # Get active MLflow run or start new one
-            active_run = mlflow.active_run()
-            if active_run is None:
-                mlflow.start_run(run_name="model_evaluation")
+            with mlflow.start_run(run_name="model_evaluation"):
+                # Log model building parameters
+                mlflow.log_param("units", self.build_config["units"])
+                mlflow.log_param("num_layers", self.build_config["num_layers"])
+                mlflow.log_param("learning_rate", self.build_config["learning_rate"])
+                mlflow.log_param("epochs", self.build_config["epochs"])
+                mlflow.log_param("batch_size", self.build_config["batch_size"])
+                mlflow.log_param("patience", self.build_config["patience"])
 
-            try:
-                # Load model
+                # Load model and data
                 self.load_model()
-
-                # Load test data
                 X_test, y_test = self.load_test_data()
-
-                # Make predictions
                 y_pred = self.make_predictions(X_test)
-
-                # Calculate metrics
                 self.metrics = self.calculate_metrics(y_test, y_pred)
 
-                # Log metrics to MLflow
+                # MANUAL MODEL LOGGING
+                logger.info("Creating MLflow model structure manually...")
+
+                temp_dir = "temp_mlflow_model"
+                model_dir = os.path.join(temp_dir, "model")
+                data_dir = os.path.join(model_dir, "data")
+                os.makedirs(data_dir, exist_ok=True)
+
+                # Save Keras model in data folder
+                model_file = os.path.join(data_dir, "model.keras")
+                self.model.save(model_file)
+
+                run_id = mlflow.active_run().info.run_id
+
+                # Create MLmodel file
+                mlmodel_content = f"""artifact_path: model
+flavors:
+  keras:
+    data: data
+    keras_backend: tensorflow
+    keras_version: 3.13.0
+    save_exported_model: false
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.keras
+    python_version: 3.13.0
+mlflow_version: {mlflow.__version__}
+model_size_bytes: {os.path.getsize(model_file)}
+run_id: {run_id}
+utc_time_created: '{pd.Timestamp.utcnow()}'
+"""
+                with open(os.path.join(model_dir, "MLmodel"), "w") as f:
+                    f.write(mlmodel_content)
+
+                # Create conda.yaml
+                conda_yaml = """channels:
+- conda-forge
+dependencies:
+- python=3.13.0
+- pip
+- pip:
+  - mlflow
+  - tensorflow
+  - keras
+"""
+                with open(os.path.join(model_dir, "conda.yaml"), "w") as f:
+                    f.write(conda_yaml)
+
+                # Create python_env.yaml
+                python_env = """python: 3.13.0
+build_dependencies:
+- pip
+dependencies:
+- -r requirements.txt
+"""
+                with open(os.path.join(model_dir, "python_env.yaml"), "w") as f:
+                    f.write(python_env)
+
+                # Create requirements.txt
+                requirements = f"""mlflow=={mlflow.__version__}
+tensorflow
+keras
+"""
+                with open(os.path.join(model_dir, "requirements.txt"), "w") as f:
+                    f.write(requirements)
+
+                # Log entire model directory
+                mlflow.log_artifacts(model_dir, artifact_path="model")
+
+                # Clean up
+                shutil.rmtree(temp_dir)
+                logger.info("Model logged to MLflow successfully")
+
+                # Log evaluation metrics
                 mlflow.log_metric("test_mse", self.metrics["mse"])
                 mlflow.log_metric("test_mae", self.metrics["mae"])
                 mlflow.log_metric("test_r2_score", self.metrics["r2_score"])
 
-                # Save metrics to file
+                # Save and log metrics file
                 self.save_metrics(self.metrics)
-
-                # Log metrics file as artifact
                 mlflow.log_artifact(self.config["metrics_file"])
 
-                # Save and log experiment info
-                run_id = mlflow.active_run().info.run_id
+                # Save experiment info
                 experiment_info = {
                     "run_id": run_id,
-                    "model_path": self.config["model_path"],
+                    "model_path": "model",
                     "metrics": self.metrics,
                 }
 
@@ -163,7 +233,6 @@ class ModelEvaluator:
 
                 mlflow.log_artifact(info_file)
 
-                # Log any error logs if they exist
                 log_file = "model_evaluation_errors.log"
                 if os.path.exists(log_file):
                     mlflow.log_artifact(log_file)
@@ -172,10 +241,6 @@ class ModelEvaluator:
                 logger.info("MLflow run ID: %s", run_id)
 
                 return self.metrics
-
-            finally:
-                if active_run is None:
-                    mlflow.end_run()
 
         except Exception as e:
             logger.error("Model evaluation failed: %s", e)

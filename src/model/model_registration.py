@@ -6,6 +6,7 @@ from pathlib import Path
 
 import mlflow
 import mlflow.keras
+from mlflow.tracking import MlflowClient
 
 # Add parent directory to path for config import
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -47,12 +48,13 @@ def load_experiment_info(file_path: str) -> dict:
 
 
 def register_model(model_name: str, experiment_info: dict):
-    """Register the model to the MLflow Model Registry."""
+    """Register the model to MLflow Model Registry with aliases and tags."""
     try:
         run_id = experiment_info["run_id"]
-        model_uri = f"runs:/{run_id}/model"
+        model_path = experiment_info["model_path"]
+        model_uri = f"runs:/{run_id}/{model_path}"
 
-        logger.info(f"Registering model from run: {run_id}")
+        logger.info(f"Registering model from URI: {model_uri}")
 
         # Register the model
         model_version = mlflow.register_model(model_uri, model_name)
@@ -61,17 +63,18 @@ def register_model(model_name: str, experiment_info: dict):
             f"Model {model_name} version {model_version.version} registered successfully"
         )
 
-        # Transition the model to "Staging" stage
-        client = mlflow.tracking.MlflowClient()
-        client.transition_model_version_stage(
+        # Use MLflow Client for alias management and tags
+        client = MlflowClient()
+
+        # Set alias "challenger" (staging for testing)
+        client.set_registered_model_alias(
             name=model_name,
+            alias="challenger",
             version=model_version.version,
-            stage="Staging",
-            archive_existing_versions=False,
         )
 
         logger.info(
-            f"Model {model_name} version {model_version.version} transitioned to Staging"
+            f"Model version {model_version.version} assigned alias 'challenger'"
         )
 
         # Add description with metrics
@@ -84,6 +87,25 @@ def register_model(model_name: str, experiment_info: dict):
             logger.info(
                 f"Added description with metrics to model version {model_version.version}"
             )
+
+        # Add tags for better organization
+        client.set_model_version_tag(
+            name=model_name,
+            version=model_version.version,
+            key="deployment_status",
+            value="staging",
+        )
+
+        client.set_model_version_tag(
+            name=model_name,
+            version=model_version.version,
+            key="framework",
+            value="tensorflow-keras",
+        )
+
+        logger.info(
+            f"Successfully registered and configured model version {model_version.version}"
+        )
 
         return model_version
 
@@ -103,8 +125,13 @@ def main():
         print(f"\n Model Registration Complete!")
         print(f"   Model Name: {model_name}")
         print(f"   Version: {model_version.version}")
-        print(f"   Stage: Staging")
+        print(f"   Alias: challenger (staging - ready for testing)")
         print(f"   Run ID: {experiment_info['run_id']}")
+        print(f"\n   Access via: models:/{model_name}@challenger")
+        print(f"\n To promote to production after validation:")
+        print(
+            f"   client.set_registered_model_alias('{model_name}', 'champion', {model_version.version})"
+        )
 
     except Exception as e:
         logger.error("Failed to complete the model registration process: %s", e)

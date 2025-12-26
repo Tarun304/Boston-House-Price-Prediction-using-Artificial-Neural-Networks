@@ -49,7 +49,7 @@ stages:
     params:
       - model_building
     outs:
-      - models/best_model.h5
+      - models/best_model.keras
 
   model_evaluation:
     cmd: python src/model/model_evaluation.py
@@ -57,13 +57,12 @@ stages:
       - src/model/model_evaluation.py
       - data/processed/X_test.csv
       - data/processed/y_test.csv
-      - models/best_model.h5
+      - models/best_model.keras
     params:
       - model_evaluation
-    metrics:
-      - reports/metrics.json:
-          cache: false
+      - model_building
     outs:
+      - reports/metrics.json
       - reports/experiment_info.json
 
   register_model:
@@ -71,5 +70,3 @@ stages:
     deps:
       - src/model/model_registration.py
       - reports/experiment_info.json
-    params:
-      - model_evaluation.model_path
