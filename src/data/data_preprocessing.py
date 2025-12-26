@@ -90,17 +90,42 @@ class DataPreprocessing:
             raise
 
     def treat_outliers(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply Winsorization to treat outliers."""
+        """Apply Winsorization and save computed bounds."""
         try:
             limits = self.config["winsorize_limits"]
             cols = list(df.columns)
+
+            winsorization_bounds = {}
+
             for col in cols:
                 if col in df.select_dtypes(include=np.number).columns:
-                    df[col] = winsorize(df[col], limits=limits, inclusive=(True, True))
+                    # Compute actual bounds from percentiles
+                    lower_bound = df[col].quantile(limits[0])
+                    upper_bound = df[col].quantile(1 - limits[1])
 
+                    # Apply clipping
+                    df[col] = df[col].clip(lower=lower_bound, upper=upper_bound)
+
+                    # Save bounds for inference
+                    winsorization_bounds[col] = {
+                        "lower": float(lower_bound),
+                        "upper": float(upper_bound),
+                    }
+
+            # Save bounds to JSON file
+            import json
+
+            os.makedirs("models", exist_ok=True)
+            with open("models/winsorization_bounds.json", "w") as f:
+                json.dump(winsorization_bounds, f, indent=4)
+
+            logger.info(
+                "Winsorization bounds saved to models/winsorization_bounds.json"
+            )
             logger.info(
                 "Outlier treatment completed using Winsorization with limits %s", limits
             )
+
             return df
         except Exception as e:
             logger.error("Failed to treat outliers: %s", e)
