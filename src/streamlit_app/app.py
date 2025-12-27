@@ -1,15 +1,7 @@
 """Streamlit UI for Boston House Price Prediction"""
 
-import sys
-from pathlib import Path
-
-import pandas as pd
 import streamlit as st
-
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
-from src.streamlit_app.utils import FEATURE_INFO, LocalPredictor
+from utils import API_URL, FEATURE_INFO, check_api_health, predict_via_api
 
 # Page config
 st.set_page_config(
@@ -50,15 +42,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
-# Initialize predictor
-@st.cache_resource
-def get_predictor():
-    predictor = LocalPredictor()
-    success = predictor.load_artifacts()
-    return predictor if success else None
-
-
 # Header
 st.markdown(
     '<p class="main-header">🏠 Boston House Price Predictor</p>', unsafe_allow_html=True
@@ -68,13 +51,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Load predictor
-with st.spinner("🔄 Loading model..."):
-    predictor = get_predictor()
+# Check API health
+with st.spinner("🔄 Connecting to API..."):
+    api_healthy = check_api_health()
 
-if predictor is None:
-    st.error("❌ Failed to load model. Please try again later.")
+if not api_healthy:
+    st.error(
+        f"❌ Cannot connect to API at {API_URL}. Please make sure FastAPI is running!"
+    )
+    st.info("💡 Run FastAPI with: `uvicorn src.api.app:app --reload`")
     st.stop()
+else:
+    st.success(f"✅ Connected to API at {API_URL}")
 
 st.markdown("---")
 
@@ -157,7 +145,7 @@ with tab1:
     if submit_button:
         with st.spinner("Making prediction..."):
             try:
-                prediction = predictor.predict(features)
+                prediction = predict_via_api(features)
 
                 st.markdown('<div class="prediction-box">', unsafe_allow_html=True)
                 st.markdown("### Predicted House Price")
@@ -165,7 +153,7 @@ with tab1:
                 st.markdown("</div>", unsafe_allow_html=True)
 
             except Exception as e:
-                st.error(f"❌ Prediction failed: {str(e)}")
+                st.error(f"❌ {str(e)}")
 
 # TAB 2: Feature Guide
 with tab2:

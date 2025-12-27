@@ -1,157 +1,49 @@
-"""Utility functions for Streamlit app"""
+"""Utility functions for Streamlit app - Calls FastAPI for predictions"""
 
-import json
-import logging
-import tempfile
+import os
 from typing import Dict
 
-import joblib
-import mlflow
-import numpy as np
-import pandas as pd
-import yaml
-from keras.models import load_model
+import requests
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Get API URL from environment variable (for Docker) or use localhost (for local dev)
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
-class LocalPredictor:
-    """Load model and artifacts from MLflow for Streamlit (same as API)"""
+def predict_via_api(features: Dict) -> float:
+    """
+    Call FastAPI to make prediction
 
-    def __init__(self):
-        self.model = None
-        self.scaler = None
-        self.selected_features = None
-        self.winsorization_bounds = None
-        self.params = None
-        self.model_alias = None
-        self.run_id = None
-        self.mlflow_uri = "https://dagshub.com/tkbehera304/Boston-House-Price-Prediction-using-Artificial-Neural-Networks.mlflow"
+    Args:
+        features: Dictionary with house features
 
-    def load_artifacts(self) -> bool:
-        """Load all artifacts from MLflow"""
-        try:
-            logger.info("Loading artifacts from MLflow...")
-
-            # Configure MLflow
-            mlflow.set_tracking_uri(self.mlflow_uri)
-
-            # Load model from registry
-            self._load_model_from_registry()
-
-            # Load preprocessing artifacts
-            self._load_preprocessing_artifacts()
-
-            # Load params
-            self._load_params()
-
-            logger.info(f"✅ All artifacts loaded! Model: {self.model_alias}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to load artifacts: {e}")
-            return False
-
-    def _load_model_from_registry(self):
-        """Load model from MLflow Registry"""
-        client = mlflow.MlflowClient()
-
-        # Try production
-        try:
-            model_uri = "models:/boston-house-price-model@champion"
-            model_version = client.get_model_version_by_alias(
-                "boston-house-price-model", "champion"
-            )
-            self.run_id = model_version.run_id
-            self.model = mlflow.keras.load_model(model_uri)
-            self.model_alias = "champion"
-            return
-        except:
-            pass
-
-        # Fallback to staging
-        try:
-            model_uri = "models:/boston-house-price-model@challenger"
-            model_version = client.get_model_version_by_alias(
-                "boston-house-price-model", "challenger"
-            )
-            self.run_id = model_version.run_id
-            self.model = mlflow.keras.load_model(model_uri)
-            self.model_alias = "challenger"
-            return
-        except Exception as e:
-            raise Exception(f"No model in registry: {e}")
-
-    def _load_preprocessing_artifacts(self):
-        """Download preprocessing artifacts from MLflow"""
-        client = mlflow.MlflowClient()
-        temp_dir = tempfile.mkdtemp()
-
-        # Download scaler
-        scaler_path = client.download_artifacts(self.run_id, "scaler.pkl", temp_dir)
-        self.scaler = joblib.load(scaler_path)
-
-        # Download selected features
-        features_path = client.download_artifacts(
-            self.run_id, "selected_features.pkl", temp_dir
-        )
-        self.selected_features = joblib.load(features_path)
-
-        # Download winsorization bounds
-        bounds_path = client.download_artifacts(
-            self.run_id, "winsorization_bounds.json", temp_dir
-        )
-        with open(bounds_path, "r") as f:
-            self.winsorization_bounds = json.load(f)
-
-    def _load_params(self):
-        """Load params.yaml"""
-        with open("params.yaml", "r") as f:
-            self.params = yaml.safe_load(f)
-
-    def preprocess_input(self, features: Dict) -> np.ndarray:
-        """Preprocess input (same as API)"""
-        # Convert to DataFrame
-        df = pd.DataFrame([features])
-
-        # Drop CHAS
-        columns_to_drop = self.params["data_preprocessing"]["drop_columns"]
-        df = df.drop(columns=columns_to_drop, errors="ignore")
-
-        # Winsorize
-        for col in df.columns:
-            if col in self.winsorization_bounds:
-                bounds = self.winsorization_bounds[col]
-                df[col] = df[col].clip(lower=bounds["lower"], upper=bounds["upper"])
-
-        # Reorder to match scaler
-        scaler_feature_order = self.scaler.feature_names_in_
-        df = df[scaler_feature_order]
-
-        # Scale
-        df_scaled = pd.DataFrame(self.scaler.transform(df), columns=df.columns)
-
-        # Select features
-        df_final = df_scaled[self.selected_features]
-
-        return df_final.values
-
-    def predict(self, features: Dict) -> float:
-        """Make prediction"""
-        X = self.preprocess_input(features)
-        prediction = self.model.predict(X, verbose=0)
-        predicted_price_thousands = float(prediction[0][0])
-        return predicted_price_thousands * 1000  # Convert to dollars
-
-
-def load_metrics():
-    """Load model metrics"""
+    Returns:
+        Predicted price in dollars
+    """
     try:
-        with open("reports/metrics.json", "r") as f:
-            return json.load(f)
+        response = requests.post(f"{API_URL}/predict", json=features, timeout=30)
+        response.raise_for_status()
+        result = response.json()
+        return result["predicted_price"]
+
+    except requests.exceptions.ConnectionError:
+        raise Exception(
+            f"Cannot connect to API at {API_URL}. Make sure FastAPI is running!"
+        )
+    except requests.exceptions.Timeout:
+        raise Exception("API request timed out. Please try again.")
+    except requests.exceptions.HTTPError as e:
+        raise Exception(f"API error: {e.response.text}")
+    except Exception as e:
+        raise Exception(f"Prediction failed: {str(e)}")
+
+
+def check_api_health() -> bool:
+    """Check if API is accessible"""
+    try:
+        response = requests.get(f"{API_URL}/health", timeout=5)
+        return response.status_code == 200
     except:
-        return None
+        return False
 
 
 # Feature information for UI
