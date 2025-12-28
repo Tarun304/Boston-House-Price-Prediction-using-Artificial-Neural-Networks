@@ -96,3 +96,62 @@ jobs:
           else
             echo "No metrics file found"
           fi
+
+  
+  build-and-push-docker:
+    needs: ml-pipeline
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && success()
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Convert repository owner to lowercase
+        id: repo
+        run: |
+          echo "owner=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      
+      - name: Build and push FastAPI image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.api
+          push: true
+          tags: |
+            ghcr.io/${{ steps.repo.outputs.owner }}/boston-api:latest
+            ghcr.io/${{ steps.repo.outputs.owner }}/boston-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Build and push Streamlit image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.streamlit
+          push: true
+          tags: |
+            ghcr.io/${{ steps.repo.outputs.owner }}/boston-streamlit:latest
+            ghcr.io/${{ steps.repo.outputs.owner }}/boston-streamlit:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Docker build summary
+        run: |
+          echo "Docker images built and pushed successfully!"
+          echo "FastAPI: ghcr.io/${{ steps.repo.outputs.owner }}/boston-api:latest"
+          echo "Streamlit: ghcr.io/${{ steps.repo.outputs.owner }}/boston-streamlit:latest"
