@@ -89,7 +89,7 @@ jobs:
 
       - name: Upload promotion flag
         if: github.ref == 'refs/heads/main' && success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: promotion-flag
           path: model_promoted.txt
@@ -120,7 +120,7 @@ jobs:
           fetch-depth: 2
 
       - name: Download promotion flag
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: promotion-flag
         continue-on-error: true
