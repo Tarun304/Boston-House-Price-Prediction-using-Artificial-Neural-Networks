@@ -165,6 +165,12 @@ class ModelPromoter:
             except Exception as e:
                 logger.warning(f"Failed to retire old champion: {e}")
 
+    def write_promotion_flag(self, promoted: bool):
+        """Write promotion result to file for CI/CD"""
+        flag_file = Path("model_promoted.txt")
+        flag_file.write_text("true" if promoted else "false")
+        logger.info(f"Wrote promotion flag: {promoted}")
+
     def promote_to_production(self) -> bool:
         """Execute model promotion logic"""
         try:
@@ -236,6 +242,9 @@ class ModelPromoter:
         logger.info("=" * 70)
 
         success = self.promote_to_production()
+
+        # Write flag for CI/CD
+        self.write_promotion_flag(success)
 
         logger.info("=" * 70)
         if success:

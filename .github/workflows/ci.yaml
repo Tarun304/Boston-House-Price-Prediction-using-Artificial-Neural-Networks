@@ -87,17 +87,23 @@ jobs:
         run: |
           python scripts/model_promotion.py
 
+      - name: Upload promotion flag
+        if: github.ref == 'refs/heads/main' && success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: promotion-flag
+          path: model_promoted.txt
+
       - name: Display pipeline results
         if: always()
         run: |
-          echo " Pipeline Results:"
+          echo "Pipeline Results:"
           if [ -f "reports/metrics.json" ]; then
             cat reports/metrics.json
           else
             echo "No metrics file found"
           fi
 
-  
   build-and-push-docker:
     needs: ml-pipeline
     runs-on: ubuntu-latest
@@ -110,23 +116,80 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+        with:
+          fetch-depth: 2
+
+      - name: Download promotion flag
+        uses: actions/download-artifact@v3
+        with:
+          name: promotion-flag
+        continue-on-error: true
+
+      - name: Check if model was promoted
+        id: check_promotion
+        run: |
+          if [ -f "model_promoted.txt" ]; then
+            PROMOTED=$(cat model_promoted.txt)
+            echo "promoted=$PROMOTED" >> $GITHUB_OUTPUT
+            echo "Model promotion status: $PROMOTED"
+          else
+            echo "promoted=false" >> $GITHUB_OUTPUT
+            echo "No promotion flag found"
+          fi
+
+      - name: Check if Docker files changed
+        id: check_docker_changes
+        run: |
+          CHANGED_FILES=$(git diff --name-only HEAD HEAD~1 | grep -E '(Dockerfile|requirements.*txt|docker-compose.yml|src/api/|src/streamlit_app/)' || true)
+          if [ -n "$CHANGED_FILES" ]; then
+            echo "docker_changed=true" >> $GITHUB_OUTPUT
+            echo "Docker-related files changed:"
+            echo "$CHANGED_FILES"
+          else
+            echo "docker_changed=false" >> $GITHUB_OUTPUT
+            echo "No Docker-related files changed"
+          fi
+
+      - name: Decide whether to build Docker
+        id: should_build
+        run: |
+          PROMOTED="${{ steps.check_promotion.outputs.promoted }}"
+          DOCKER_CHANGED="${{ steps.check_docker_changes.outputs.docker_changed }}"
+          
+          if [ "$PROMOTED" = "true" ] || [ "$DOCKER_CHANGED" = "true" ]; then
+            echo "build=true" >> $GITHUB_OUTPUT
+            echo "Will build Docker images"
+            if [ "$PROMOTED" = "true" ]; then
+              echo "  Reason: New model promoted to production"
+            fi
+            if [ "$DOCKER_CHANGED" = "true" ]; then
+              echo "  Reason: Docker files changed"
+            fi
+          else
+            echo "build=false" >> $GITHUB_OUTPUT
+            echo "Skipping Docker build (no model promotion or Docker changes)"
+          fi
+
       - name: Set up Docker Buildx
+        if: steps.should_build.outputs.build == 'true'
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Log in to GitHub Container Registry
+        if: steps.should_build.outputs.build == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Convert repository owner to lowercase
+        if: steps.should_build.outputs.build == 'true'
         id: repo
         run: |
           echo "owner=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-      
+
       - name: Build and push FastAPI image
+        if: steps.should_build.outputs.build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -137,8 +200,9 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.owner }}/boston-api:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
       - name: Build and push Streamlit image
+        if: steps.should_build.outputs.build == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -149,9 +213,10 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.owner }}/boston-streamlit:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      
+
       - name: Docker build summary
+        if: steps.should_build.outputs.build == 'true'
         run: |
-          echo "Docker images built and pushed successfully!"
+          echo "Docker images built and pushed successfully"
           echo "FastAPI: ghcr.io/${{ steps.repo.outputs.owner }}/boston-api:latest"
           echo "Streamlit: ghcr.io/${{ steps.repo.outputs.owner }}/boston-streamlit:latest"
