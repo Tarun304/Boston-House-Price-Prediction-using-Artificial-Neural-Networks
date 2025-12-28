@@ -137,45 +137,74 @@ jobs:
             echo "No promotion flag found"
           fi
 
-      - name: Check if Docker files changed
-        id: check_docker_changes
+      - name: Check which Docker files changed
+        id: check_changes
         run: |
-          CHANGED_FILES=$(git diff --name-only HEAD HEAD~1 | grep -E '(Dockerfile|requirements.*txt|docker-compose.yml|src/api/|src/streamlit_app/)' || true)
-          if [ -n "$CHANGED_FILES" ]; then
-            echo "docker_changed=true" >> $GITHUB_OUTPUT
-            echo "Docker-related files changed:"
-            echo "$CHANGED_FILES"
+          CHANGED_FILES=$(git diff --name-only HEAD HEAD~1)
+          
+          API_CHANGED=$(echo "$CHANGED_FILES" | grep -E '(Dockerfile.api|requirements-api.txt|src/api/)' || true)
+          STREAMLIT_CHANGED=$(echo "$CHANGED_FILES" | grep -E '(Dockerfile.streamlit|requirements-streamlit.txt|src/streamlit_app/)' || true)
+          SHARED_CHANGED=$(echo "$CHANGED_FILES" | grep -E '(docker-compose.yml|src/config.py|src/__init__.py)' || true)
+          
+          if [ -n "$API_CHANGED" ] || [ -n "$SHARED_CHANGED" ]; then
+            echo "build_api=true" >> $GITHUB_OUTPUT
+            echo "FastAPI files changed"
           else
-            echo "docker_changed=false" >> $GITHUB_OUTPUT
-            echo "No Docker-related files changed"
+            echo "build_api=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ -n "$STREAMLIT_CHANGED" ] || [ -n "$SHARED_CHANGED" ]; then
+            echo "build_streamlit=true" >> $GITHUB_OUTPUT
+            echo "Streamlit files changed"
+          else
+            echo "build_streamlit=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [ -n "$API_CHANGED" ]; then
+            echo "API files changed:"
+            echo "$API_CHANGED"
+          fi
+          if [ -n "$STREAMLIT_CHANGED" ]; then
+            echo "Streamlit files changed:"
+            echo "$STREAMLIT_CHANGED"
+          fi
+          if [ -n "$SHARED_CHANGED" ]; then
+            echo "Shared files changed:"
+            echo "$SHARED_CHANGED"
           fi
 
-      - name: Decide whether to build Docker
-        id: should_build
+      - name: Decide what to build
+        id: decide_build
         run: |
           PROMOTED="${{ steps.check_promotion.outputs.promoted }}"
-          DOCKER_CHANGED="${{ steps.check_docker_changes.outputs.docker_changed }}"
+          API_CHANGED="${{ steps.check_changes.outputs.build_api }}"
+          STREAMLIT_CHANGED="${{ steps.check_changes.outputs.build_streamlit }}"
           
-          if [ "$PROMOTED" = "true" ] || [ "$DOCKER_CHANGED" = "true" ]; then
-            echo "build=true" >> $GITHUB_OUTPUT
-            echo "Will build Docker images"
-            if [ "$PROMOTED" = "true" ]; then
-              echo "  Reason: New model promoted to production"
-            fi
-            if [ "$DOCKER_CHANGED" = "true" ]; then
-              echo "  Reason: Docker files changed"
-            fi
+          if [ "$PROMOTED" = "true" ]; then
+            echo "build_api=true" >> $GITHUB_OUTPUT
+            echo "build_streamlit=true" >> $GITHUB_OUTPUT
+            echo "Building BOTH images (model promoted)"
           else
-            echo "build=false" >> $GITHUB_OUTPUT
-            echo "Skipping Docker build (no model promotion or Docker changes)"
+            echo "build_api=$API_CHANGED" >> $GITHUB_OUTPUT
+            echo "build_streamlit=$STREAMLIT_CHANGED" >> $GITHUB_OUTPUT
+            
+            if [ "$API_CHANGED" = "true" ] && [ "$STREAMLIT_CHANGED" = "true" ]; then
+              echo "Building BOTH images (files changed)"
+            elif [ "$API_CHANGED" = "true" ]; then
+              echo "Building ONLY FastAPI image"
+            elif [ "$STREAMLIT_CHANGED" = "true" ]; then
+              echo "Building ONLY Streamlit image"
+            else
+              echo "No Docker builds needed"
+            fi
           fi
 
       - name: Set up Docker Buildx
-        if: steps.should_build.outputs.build == 'true'
+        if: steps.decide_build.outputs.build_api == 'true' || steps.decide_build.outputs.build_streamlit == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: steps.should_build.outputs.build == 'true'
+        if: steps.decide_build.outputs.build_api == 'true' || steps.decide_build.outputs.build_streamlit == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -183,13 +212,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Convert repository owner to lowercase
-        if: steps.should_build.outputs.build == 'true'
+        if: steps.decide_build.outputs.build_api == 'true' || steps.decide_build.outputs.build_streamlit == 'true'
         id: repo
         run: |
           echo "owner=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Build and push FastAPI image
-        if: steps.should_build.outputs.build == 'true'
+        if: steps.decide_build.outputs.build_api == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -202,7 +231,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push Streamlit image
-        if: steps.should_build.outputs.build == 'true'
+        if: steps.decide_build.outputs.build_streamlit == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -215,8 +244,11 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Docker build summary
-        if: steps.should_build.outputs.build == 'true'
+        if: steps.decide_build.outputs.build_api == 'true' || steps.decide_build.outputs.build_streamlit == 'true'
         run: |
-          echo "Docker images built and pushed successfully"
-          echo "FastAPI: ghcr.io/${{ steps.repo.outputs.owner }}/boston-api:latest"
-          echo "Streamlit: ghcr.io/${{ steps.repo.outputs.owner }}/boston-streamlit:latest"
+          if [ "${{ steps.decide_build.outputs.build_api }}" = "true" ]; then
+            echo "FastAPI image built: ghcr.io/${{ steps.repo.outputs.owner }}/boston-api:latest"
+          fi
+          if [ "${{ steps.decide_build.outputs.build_streamlit }}" = "true" ]; then
+            echo "Streamlit image built: ghcr.io/${{ steps.repo.outputs.owner }}/boston-streamlit:latest"
+          fi

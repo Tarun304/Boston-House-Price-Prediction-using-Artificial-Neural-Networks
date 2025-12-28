@@ -21,3 +21,5 @@ ENV API_URL=http://fastapi:8000
 
 # Start Streamlit
 CMD ["streamlit", "run", "src/streamlit_app/app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+
+# Test update
