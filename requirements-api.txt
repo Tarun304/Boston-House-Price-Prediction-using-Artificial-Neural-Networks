@@ -1,0 +1,25 @@
+# Web Framework
+fastapi==0.127.0
+uvicorn==0.40.0
+
+# Validation
+pydantic==2.12.5
+pydantic-settings==2.12.0
+
+# MLflow (to load model from DagsHub)
+mlflow==3.8.0
+
+# ML Runtime (to run predictions)
+tensorflow-cpu==2.20.0
+keras==3.13.0
+numpy==2.4.0
+pandas==2.3.3
+scikit-learn==1.8.0
+joblib==1.5.3
+
+# Config
+python-dotenv==1.2.1
+PyYAML==6.0.3
+
+# HTTP client (for health check)
+requests==2.32.5

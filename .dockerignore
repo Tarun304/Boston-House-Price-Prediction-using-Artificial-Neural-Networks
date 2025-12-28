@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+bostvenv/
+.venv
+
+# DVC
+.dvc/cache
+.dvc/tmp
+
+# Data files (too large, pulled from DVC)
+data/
+*.csv
+*.h5
+*.keras
+
+# Git
+.git/
+.gitignore
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Tests
+tests/
+htmlcov/
+.coverage
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+docs/
+
+# Streamlit
+streamlit_app/

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  fastapi:
+    image: boston-api:latest
+    container_name: boston-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DAGSHUB_USERNAME=${DAGSHUB_USERNAME}
+      - DAGSHUB_TOKEN=${DAGSHUB_TOKEN}
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}
+      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASSWORD}
+    networks:
+      - boston-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Streamlit Frontend
+  streamlit:
+    image: boston-streamlit:latest
+    container_name: boston-streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://fastapi:8000
+    depends_on:
+      - fastapi
+    networks:
+      - boston-network
+
+networks:
+  boston-network:
+    driver: bridge
